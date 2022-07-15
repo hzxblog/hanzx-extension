@@ -1,8 +1,9 @@
+import axios from 'axios'
 const connections = {}
 
 chrome.runtime.onConnect.addListener(function(devToolsConnection) {
   // assign the listener function to a variable so we can remove it later
-  var devToolsListener = function(message, sender, sendResponse) {
+  let devToolsListener = function(message, sender, sendResponse) {
       // Inject a content script into the identified tab
       const { type, tabId } = message
       if (type === 'inject-script') {
@@ -13,6 +14,22 @@ chrome.runtime.onConnect.addListener(function(devToolsConnection) {
       }
       if (type === 'key') {
         devToolsConnection.postMessage(message)
+      }
+      if (type === 'xhr') {
+        const { token, data } = message.data
+        axios({
+          url: 'http://10.255.158.75/doParam',
+          method: 'post',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          params: {
+            data,
+            token
+          }
+        }).then(res => {
+          devToolsConnection.postMessage(res.data)
+        })
       }
   }
   // add the listener
@@ -26,7 +43,7 @@ chrome.runtime.onConnect.addListener(function(devToolsConnection) {
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
   // Messages from content scripts should have sender.tab set
   if (sender.tab) {
-    var tabId = sender.tab.id;
+    let tabId = sender.tab.id;
     if (tabId in connections) {
       connections[tabId].postMessage(request);
     } else {

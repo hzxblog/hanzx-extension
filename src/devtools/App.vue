@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { ref } from 'vue'
 import decrypt from './decrypt.ts'
 
 const keys_string = ref(null)
@@ -7,6 +7,8 @@ const sm4_string = ref(null)
 const urls = ref([])
 const urlDetail = ref({})
 const tabValue = ref(1)
+const showDetail = ref(false)
+const token = ref(null)
 const tabList = ref([
   {
     value: 1,
@@ -38,9 +40,12 @@ var backgroundPageConnection = chrome.runtime.connect({
 });
 
 backgroundPageConnection.onMessage.addListener(function (message) {
+  console.log(message)
   if (!message.data) return
   keys_string.value = message.data.keys_string
   sm4_string.value = message.data.sm4_string
+  token.value = message.data.token
+
 });
 // Relay the tab ID to the background page
 backgroundPageConnection.postMessage({
@@ -52,19 +57,27 @@ backgroundPageConnection.postMessage({
 chrome.devtools.network.onRequestFinished.addListener(
   (res) => {
     const request = res.request;
-    request.href = request.url.split('?')[0];
-    request.id = uuid();
-    // request.queryString = request.queryString.map(item => {
-    //   return {
-    //     ...item,
-    //     value: decrypt(keys_string.value, sm4_string.value, item.value)
-    //   }
-    // })
-    res.getContent((content) => {
-      request.responseData = decrypt(keys_string.value, sm4_string.value, content);
-    })
-    urls.value.push(request);
-    console.log(request)
+    if (request.headers.find(item => item.name === 'Connection' && item.value === 'keep-alive')) {
+      request.headers = [
+        {
+          name: 'Url',
+          value: request.url
+        },
+        {
+          name: 'Method',
+          value: request.method
+        },
+        ...request.headers,
+      ]
+      request.href = request.url.split('?')[0];
+      request.id = uuid();
+      res.getContent((content) => {
+        request.responseData = decrypt(keys_string.value, sm4_string.value, content);
+      })
+      urls.value.push(request);
+      console.log(request)
+    }
+    
   }
 );
 
@@ -72,12 +85,27 @@ function clearUrlList() {
   urls.value = [];
 }
 
+
 function handleClickDetail(item) {
+  showDetail.value = true
   urlDetail.value = item;
+  let query = ''
+  if (item.queryString.length) query = item.queryString[0].value
+  backgroundPageConnection.postMessage({
+    type: 'xhr',
+    data: {
+      token: token.value,
+      data: query
+    }
+  });
 }
 
 function handleClickTab(item) {
   tabValue.value = item.value;
+}
+
+function closeDetail() {
+  showDetail.value = false
 }
 
 </script> 
@@ -97,9 +125,9 @@ function handleClickTab(item) {
         >
         {{ item.href }}</div>
       </div>
-      <div v-if="urlDetail.id" class="url-detail">
+      <div v-if="showDetail" class="url-detail">
         <div class="url-detail_header align-center">
-          <button @click="clearUrlList">关闭</button>
+          <button @click="closeDetail">关闭</button>
           <div class="tab">
             <div 
               v-for="item in tabList"
@@ -111,15 +139,23 @@ function handleClickTab(item) {
             </div>
           </div>
         </div>
-        <div>
-          <div v-if="tabValue === 1"></div>
+        <div class="url-detail_content">
+          <div v-if="tabValue === 1">
+            <div v-for="item in urlDetail.headers" :key="item.name" class="list-item">
+              <span class="name">{{ item.name }}: </span> {{ item.value }}
+            </div>
+          </div>
           <div v-else-if="tabValue === 2">
-            <div v-for="query in urlDetail.queryString" :key="query.name" class="query-item">
+            <div v-for="query in urlDetail.queryString" :key="query.name" class="list-item">
               <span class="name">{{ query.name }}: </span> {{ query.value }}
             </div>
           </div>
           <div v-else-if="tabValue === 3">
-
+            <JsonViewer
+              :value="urlDetail.responseData"
+              :expand-depth="2"
+              copyable
+            ></JsonViewer>
           </div>
         </div>
       </div>
@@ -128,7 +164,7 @@ function handleClickTab(item) {
 </template>
 
 <style scoped lang="scss">
-.query-item {
+.list-item {
   padding: 5px;
   line-height: 1.5;
   word-break: break-all;
@@ -161,20 +197,26 @@ function handleClickTab(item) {
   height: 25px;
   line-height: 25px;
 }
+.url-detail_content {
+  height: calc(100% - 25px);
+  overflow: auto;
+}
 .opera-header {
   background: #F1F3F4;
-  padding: 5px;
+  height: 30px;
+  line-height: 30px;
   border-bottom: 1px solid #CACDD1;
+  padding: 0 5px;
 }
 .content {
   display: flex;
   align-items: stretch;
-  height: 100%;
+  height: calc(100% - 30px);
 }
 .url-list {
   flex: 1;
   width: 0;
-  height: calc(100% - 25px);
+  height: 100%;
   overflow: auto;
 }
 .url-detail {

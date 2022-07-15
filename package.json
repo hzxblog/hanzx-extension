@@ -8,11 +8,13 @@
     "lint": "vue-cli-service lint"
   },
   "dependencies": {
+    "axios": "^0.27.2",
     "core-js": "^3.6.5",
     "gm-crypto": "^0.1.8",
     "sm-crypto": "^0.3.8",
     "vue": "^3.0.0",
-    "vue-class-component": "^8.0.0-0"
+    "vue-class-component": "^8.0.0-0",
+    "vue3-json-viewer": "^2.2.2"
   },
   "devDependencies": {
     "@types/sm-crypto": "^0.3.0",

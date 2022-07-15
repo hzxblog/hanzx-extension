@@ -21,8 +21,6 @@ function getPrivateString(key: string, sm4: string) {
 export default function decrypt(key: string, sm4: string, data: string): any {
   const str = getPrivateString(key, sm4)
   if (str && typeof data === 'string' && data.startsWith(PREFIX_STRING)) {
-    console.log(data.substring(PREFIX_STRING.length), str)
-    console.log(sm2.doDecrypt(data.substring(PREFIX_STRING.length), str))
     return JSON.parse(sm2.doDecrypt(data.substring(PREFIX_STRING.length), str));
   }
   return data;
