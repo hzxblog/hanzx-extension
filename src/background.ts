@@ -28,7 +28,7 @@ chrome.runtime.onConnect.addListener(function(devToolsConnection) {
             token
           }
         }).then(res => {
-          devToolsConnection.postMessage(res.data)
+          devToolsConnection.postMessage({ data: res.data, type: 'params' })
         })
       }
   }

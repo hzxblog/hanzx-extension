@@ -40,7 +40,19 @@ var backgroundPageConnection = chrome.runtime.connect({
 });
 
 backgroundPageConnection.onMessage.addListener(function (message) {
-  console.log(message)
+  const { type, data } = message
+  if (type === 'params') {
+    const query = data.data
+    const res = []
+    query.split('&').forEach(item => {
+      const arr = item.split('=');
+      res.push({
+        name: arr[0],
+        value: arr[1]
+      })
+    })
+    urlDetail.value.request.params = res
+  }
   if (!message.data) return
   keys_string.value = message.data.keys_string
   sm4_string.value = message.data.sm4_string
@@ -56,8 +68,8 @@ backgroundPageConnection.postMessage({
 
 chrome.devtools.network.onRequestFinished.addListener(
   (res) => {
-    const request = res.request;
-    if (request.headers.find(item => item.name === 'Connection' && item.value === 'keep-alive')) {
+    const { responseDat, request, _resourceType } = res
+    if (_resourceType === 'xhr') {
       request.headers = [
         {
           name: 'Url',
@@ -70,12 +82,11 @@ chrome.devtools.network.onRequestFinished.addListener(
         ...request.headers,
       ]
       request.href = request.url.split('?')[0];
-      request.id = uuid();
+      res.id = uuid();
       res.getContent((content) => {
         request.responseData = decrypt(keys_string.value, sm4_string.value, content);
       })
-      urls.value.push(request);
-      console.log(request)
+      urls.value.push(res);
     }
     
   }
@@ -90,7 +101,7 @@ function handleClickDetail(item) {
   showDetail.value = true
   urlDetail.value = item;
   let query = ''
-  if (item.queryString.length) query = item.queryString[0].value
+  if (item.request.queryString.length) query = item.request.queryString[0].value
   backgroundPageConnection.postMessage({
     type: 'xhr',
     data: {
@@ -113,21 +124,43 @@ function closeDetail() {
 <template>
   <div style="width: 100%; height: 100%; overflow: hidden;">
     <div class="opera-header">
-      <button @click="clearUrlList">清除</button>
+      <a-button type="primary" @click="clearUrlList" size="small">
+        <template #icon><stop-outlined /></template>
+      </a-button>
     </div>
     <div class="content">
       <div class="url-list">
-        <div 
-          v-for="(item, index) in urls" 
-          :key="index" 
-          :class="['url-item', urlDetail.id === item.id && 'active']"
-          @click="handleClickDetail(item)"
-        >
-        {{ item.href }}</div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>状态</th>
+              <th>类型</th>
+              <th>大小</th>
+              <th>时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(item, index) in urls" 
+              :key="index"
+              :class="['url-item', urlDetail.id === item.id && 'active']"
+              @click="handleClickDetail(item)"
+            >
+              <td>{{ item.request.href }}</td>
+              <td>{{ item.response.status }}</td>
+              <td>{{ item._resourceType }}</td>
+              <td>{{ item.response.content.size / 1024 }} kb</td>
+              <td>{{ item.time }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
       <div v-if="showDetail" class="url-detail">
         <div class="url-detail_header align-center">
-          <button @click="closeDetail">关闭</button>
+          <a-button type="primary" @click="closeDetail" size="small">
+            <template #icon><stop-outlined /></template>
+          </a-button>
           <div class="tab">
             <div 
               v-for="item in tabList"
@@ -135,18 +168,18 @@ function closeDetail() {
               :class="['tab-item', item.value === tabValue && 'active']"
               @click="handleClickTab(item)"
             >
-            {{ item.label }}
+              <div class="tab-item_content">{{ item.label }}</div>
             </div>
           </div>
         </div>
         <div class="url-detail_content">
           <div v-if="tabValue === 1">
-            <div v-for="item in urlDetail.headers" :key="item.name" class="list-item">
+            <div v-for="item in urlDetail.request.headers" :key="item.name" class="list-item">
               <span class="name">{{ item.name }}: </span> {{ item.value }}
             </div>
           </div>
           <div v-else-if="tabValue === 2">
-            <div v-for="query in urlDetail.queryString" :key="query.name" class="list-item">
+            <div v-for="query in urlDetail.request.params" :key="query.name" class="list-item">
               <span class="name">{{ query.name }}: </span> {{ query.value }}
             </div>
           </div>
@@ -164,6 +197,26 @@ function closeDetail() {
 </template>
 
 <style scoped lang="scss">
+.table {
+  width: 100%;
+  border-spacing: 0;
+  th {
+    padding: 5px 3px;
+    background: #F1F3F4;
+  }
+  th {
+    padding: 3px;
+  }
+  td,
+  th {
+    text-align: left;
+    border-bottom:1px solid #CACDD1;
+  }
+  td,
+  th:not(:last-child) {
+    border-right:1px solid #CACDD1;
+  }
+}
 .list-item {
   padding: 5px;
   line-height: 1.5;
@@ -182,20 +235,24 @@ function closeDetail() {
   align-items: center;
 }
 .tab-item {
+  height: 100%;
   padding: 0 10px;
   cursor: pointer;
   text-align: center;
+  .tab-item_content {
+    height: 100%;
+    border: 1px solid transparent;
+  }
   &.active {
-    color: #333333;
-    border-bottom: 2px solid #1A73E8;
+    .tab-item_content {
+      color: #333333;
+      border-bottom: 2px solid #1A73E8;
+    }
   }
 }
 .url-detail_header {
   background: #F1F3F4;
-  padding: 5px;
   border-bottom: 1px solid #CACDD1;
-  height: 25px;
-  line-height: 25px;
 }
 .url-detail_content {
   height: calc(100% - 25px);
@@ -203,10 +260,8 @@ function closeDetail() {
 }
 .opera-header {
   background: #F1F3F4;
-  height: 30px;
-  line-height: 30px;
   border-bottom: 1px solid #CACDD1;
-  padding: 0 5px;
+  padding: 5px;
 }
 .content {
   display: flex;
