@@ -1,14 +1,20 @@
-<script setup>
-import { ref } from 'vue'
+<script setup lang="ts">
+import { ref, reactive } from 'vue'
 import decrypt from './decrypt.ts'
 
 const keys_string = ref(null)
 const sm4_string = ref(null)
-const urls = ref([])
+const urls = reactive([])
 const urlDetail = ref({})
 const tabValue = ref(1)
 const showDetail = ref(false)
 const token = ref(null)
+const activeKey = ref('1')
+const colActiveKey = ref(['1', '2', '3']);
+const labelStyle = ref({
+  fontWeight: 'bold',
+  color: '#66666'
+})
 const tabList = ref([
   {
     value: 1,
@@ -22,6 +28,51 @@ const tabList = ref([
     value: 3,
     label: '预览'
   },
+])
+
+type TableDataType = {
+  text: string;
+  record: any;
+  index: number;
+};
+
+type ColumnType = {
+  title: string;
+  dataIndex: string;
+  key: string;
+  customRender?:(value: TableDataType) => string
+};
+
+const columns: ColumnType[] = ref([
+  {
+    title: '名称',
+    dataIndex: 'request.href',
+    customRender({ record }: TableDataType ): string {
+      return record.request.href
+    }
+  },
+  {
+    title: '状态',
+    dataIndex: 'response.status',
+    customRender({ record }: TableDataType): string {
+      return record.response.content.size
+    }
+  },
+  {
+    title: '类型',
+    dataIndex: '_resourceType',
+  },
+  {
+    title: '大小',
+    dataIndex: 'response.content.size',
+    customRender({ record }: TableDataType): string {
+      return record.response.content.size
+    }
+  },
+  {
+    title: '时间',
+    dataIndex: 'time',
+  }
 ])
 
 function uuid(range = 32) {
@@ -70,30 +121,19 @@ chrome.devtools.network.onRequestFinished.addListener(
   (res) => {
     const { responseDat, request, _resourceType } = res
     if (_resourceType === 'xhr') {
-      request.headers = [
-        {
-          name: 'Url',
-          value: request.url
-        },
-        {
-          name: 'Method',
-          value: request.method
-        },
-        ...request.headers,
-      ]
       request.href = request.url.split('?')[0];
       res.id = uuid();
       res.getContent((content) => {
-        request.responseData = decrypt(keys_string.value, sm4_string.value, content);
+        res.responseData = decrypt(keys_string.value, sm4_string.value, content);
       })
-      urls.value.push(res);
+      urls.push(res);
+      console.log(urls)
     }
-    
   }
 );
 
 function clearUrlList() {
-  urls.value = [];
+  urls = reactive([]);
 }
 
 
@@ -111,87 +151,117 @@ function handleClickDetail(item) {
   });
 }
 
-function handleClickTab(item) {
-  tabValue.value = item.value;
-}
-
-function closeDetail() {
-  showDetail.value = false
-}
-
 </script> 
 
 <template>
   <div style="width: 100%; height: 100%; overflow: hidden;">
     <div class="opera-header">
       <a-button type="primary" @click="clearUrlList" size="small">
-        <template #icon><stop-outlined /></template>
+          清除
       </a-button>
     </div>
     <div class="content">
-      <div class="url-list">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>名称</th>
-              <th>状态</th>
-              <th>类型</th>
-              <th>大小</th>
-              <th>时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="(item, index) in urls" 
-              :key="index"
-              :class="['url-item', urlDetail.id === item.id && 'active']"
-              @click="handleClickDetail(item)"
-            >
-              <td>{{ item.request.href }}</td>
-              <td>{{ item.response.status }}</td>
-              <td>{{ item._resourceType }}</td>
-              <td>{{ item.response.content.size / 1024 }} kb</td>
-              <td>{{ item.time }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div v-if="showDetail" class="url-detail">
-        <div class="url-detail_header align-center">
-          <a-button type="primary" @click="closeDetail" size="small">
-            <template #icon><stop-outlined /></template>
-          </a-button>
-          <div class="tab">
-            <div 
-              v-for="item in tabList"
-              :key="item.value"
-              :class="['tab-item', item.value === tabValue && 'active']"
-              @click="handleClickTab(item)"
-            >
-              <div class="tab-item_content">{{ item.label }}</div>
-            </div>
-          </div>
+      <a-table
+        style="width: 100%;"
+        size="small"
+        :pagination="false"
+        :dataSource="urls"
+        :columns="columns"
+        :customRow="
+          (record) => {
+            return {
+              onClick: () => {
+                handleClickDetail(record)
+              }
+            }
+          }
+        "
+      >
+      </a-table>
+      <a-drawer 
+        v-model:visible="showDetail"
+        :mask="false"
+        width="50%"
+      >
+        <div class="url-detail">
+          <a-tabs v-model:activeKey="activeKey" size="small">
+            <a-tab-pane key="1" tab="标头">
+              <a-collapse v-model:activeKey="colActiveKey" size="small">
+                <a-collapse-panel key="1" header="常规">
+                  <a-descriptions  
+                    :column="1" 
+                    size="small"
+                    :labelStyle="labelStyle"
+                  >
+                    <a-descriptions-item label="请求网址">
+                      {{ urlDetail.request.url }}
+                    </a-descriptions-item>
+                    <a-descriptions-item label="请求方式">
+                      {{ urlDetail.request.method }}
+                    </a-descriptions-item>
+                    <a-descriptions-item label="状态码">
+                      {{ urlDetail.response.status }} {{ urlDetail.response.statusText }}
+                    </a-descriptions-item>
+                    <a-descriptions-item label="远程地址">
+                      {{ urlDetail.serverIPAddress }}
+                    </a-descriptions-item>
+                  </a-descriptions>
+                </a-collapse-panel>
+                <a-collapse-panel key="2" header="响应标头">
+                  <a-descriptions
+                    :column="1" 
+                    size="small"
+                    :labelStyle="labelStyle"
+                  >
+                    <a-descriptions-item 
+                      v-for="item in urlDetail.response.headers" 
+                      :key="item.name" 
+                      :label="item.name">
+                      {{ item.value }}
+                    </a-descriptions-item>
+                  </a-descriptions>
+                </a-collapse-panel>
+                <a-collapse-panel key="3" header="请求标头">
+                  <a-descriptions
+                    :column="1" 
+                    size="small"
+                    :labelStyle="labelStyle"
+                  >
+                    <a-descriptions-item 
+                      v-for="item in urlDetail.request.headers" 
+                      :key="item.name" 
+                      :label="item.name">
+                      {{ item.value }}
+                    </a-descriptions-item>
+                  </a-descriptions>
+                </a-collapse-panel>
+              </a-collapse>
+            </a-tab-pane>
+            <a-tab-pane key="2" tab="载荷">
+              <a-descriptions
+                bordered
+                :column="1" 
+                size="small"
+                :labelStyle="labelStyle"
+              >
+                <a-descriptions-item 
+                  v-for="item in urlDetail.request.params" 
+                  :key="item.name" 
+                  :label="item.name">
+                  {{ item.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </a-tab-pane>
+            <a-tab-pane key="3" tab="预览">
+              <JsonViewer
+                :value="urlDetail.responseData"
+                :expand-depth="2"
+                copyable
+              ></JsonViewer>
+            </a-tab-pane>
+          </a-tabs>
         </div>
-        <div class="url-detail_content">
-          <div v-if="tabValue === 1">
-            <div v-for="item in urlDetail.request.headers" :key="item.name" class="list-item">
-              <span class="name">{{ item.name }}: </span> {{ item.value }}
-            </div>
-          </div>
-          <div v-else-if="tabValue === 2">
-            <div v-for="query in urlDetail.request.params" :key="query.name" class="list-item">
-              <span class="name">{{ query.name }}: </span> {{ query.value }}
-            </div>
-          </div>
-          <div v-else-if="tabValue === 3">
-            <JsonViewer
-              :value="urlDetail.responseData"
-              :expand-depth="2"
-              copyable
-            ></JsonViewer>
-          </div>
-        </div>
-      </div>
+      </a-drawer>
     </div>
   </div>
 </template>
@@ -229,35 +299,6 @@ function closeDetail() {
     font-weight: bold;
   }
 }
-.tab {
-  height: 100%;
-  display: flex;
-  align-items: center;
-}
-.tab-item {
-  height: 100%;
-  padding: 0 10px;
-  cursor: pointer;
-  text-align: center;
-  .tab-item_content {
-    height: 100%;
-    border: 1px solid transparent;
-  }
-  &.active {
-    .tab-item_content {
-      color: #333333;
-      border-bottom: 2px solid #1A73E8;
-    }
-  }
-}
-.url-detail_header {
-  background: #F1F3F4;
-  border-bottom: 1px solid #CACDD1;
-}
-.url-detail_content {
-  height: calc(100% - 25px);
-  overflow: auto;
-}
 .opera-header {
   background: #F1F3F4;
   border-bottom: 1px solid #CACDD1;
@@ -267,33 +308,5 @@ function closeDetail() {
   display: flex;
   align-items: stretch;
   height: calc(100% - 30px);
-}
-.url-list {
-  flex: 1;
-  width: 0;
-  height: 100%;
-  overflow: auto;
-}
-.url-detail {
-  flex: 1;
-  border-left: 2px solid #CACDD1;
-  height: 100%;
-  overflow: auto;
-}
-.url-item {
-  padding: 2px 5px;
-  width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  word-break: break-all;
-  cursor: pointer;
-  &:hover {
-    background: #F5F5F5;
-  }
-  &.active {
-    color: #fff;
-    background: #1A73E8;
-  }
 }
 </style>
